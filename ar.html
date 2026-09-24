@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#7652F5" />
+  <title>Experiencia AR · Bernardo O'Higgins</title>
+  <link href="https://fonts.googleapis.com/css2?family=Signika:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- 1) A-Frame: motor 3D declarativo (versión compatible con MindAR 1.2.5) -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <!-- 2) MindAR (Image Tracking) para A-Frame: reconoce el retrato mediante la cámara -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    :root{--purple:#7652F5;--green:#56C368;--red:#FF665C;--bg:#F5F5FF}
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%;overflow:hidden;background:#000;font-family:"Signika",system-ui,sans-serif}
+    button,a{font:inherit;border:0;cursor:pointer;text-decoration:none}
+
+    /* Contenedor de la escena: MindAR inserta aquí el <video> de la cámara */
+    #ar-container{position:fixed;inset:0;overflow:hidden}
+
+    /* ===== Barra superior ===== */
+    .top{position:fixed;z-index:20;top:max(16px,env(safe-area-inset-top));left:16px;right:16px;display:flex;gap:10px;align-items:center}
+    .back{background:var(--purple);color:#fff;font-weight:600;font-size:18px;padding:8px 22px;border-radius:12px}
+    .status{flex:1;background:rgba(20,16,40,.72);color:#fff;font-size:14px;padding:9px 12px;border-radius:12px;backdrop-filter:blur(6px);text-align:center}
+    .status.found{background:rgba(86,195,104,.92)}
+
+    /* Guía de escaneo (marco) */
+    .scan{position:fixed;z-index:10;left:50%;top:50%;width:62vw;max-width:300px;aspect-ratio:814/1000;transform:translate(-50%,-50%);
+      border:3px dashed rgba(255,255,255,.85);border-radius:18px;pointer-events:none;transition:opacity .3s}
+    .scan.hide{opacity:0}
+
+    /* ===== Controles de reproducción ===== */
+    .controls{position:fixed;z-index:20;left:16px;right:16px;bottom:max(16px,env(safe-area-inset-bottom));
+      background:rgba(255,255,255,.96);border-radius:20px;padding:12px 14px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    .controls.show{display:block}
+    .row{display:flex;align-items:center;gap:10px}
+    .ctl{width:46px;height:46px;border-radius:50%;background:#EEEEFD;color:var(--purple);display:grid;place-items:center;flex:none}
+    .ctl.main{width:54px;height:54px;background:var(--purple);color:#fff}
+    .ctl svg{width:22px;height:22px;fill:currentColor}
+    .time{font-size:12px;color:#555;min-width:78px;text-align:right}
+    input[type=range]{flex:1;accent-color:var(--purple)}
+    .controls.quiz .row{display:none}
+    .next{display:block;width:100%;margin-top:10px;background:var(--purple);color:#fff;font-weight:600;font-size:17px;padding:12px;border-radius:22px;text-align:center}
+
+    /* ===== Pantalla de inicio / carga / error ===== */
+    .overlay{position:fixed;z-index:30;inset:0;background:var(--bg);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px;text-align:center;color:#3D3D3F}
+    .overlay.hide{display:none}
+    .overlay img{width:150px;border-radius:14px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+    .overlay h1{font-size:24px;color:var(--purple);margin-bottom:8px}
+    .overlay p{font-size:15px;line-height:1.45;max-width:340px;margin-bottom:22px}
+    .start{background:var(--purple);color:#fff;font-size:19px;font-weight:600;padding:16px 34px;border-radius:26px}
+    .bar{width:240px;height:8px;background:#E3DEFD;border-radius:8px;overflow:hidden;margin-top:6px}
+    .bar i{display:block;height:100%;width:0;background:var(--purple);transition:width .2s}
+    .err{color:var(--red);font-weight:600}
+  </style>
+</head>
+<body>
+
+<!-- Video fuente de la textura AR. Va FUERA de <a-assets> para que A-Frame no bloquee la carga esperando el video.
+     playsinline + webkit-playsinline: imprescindible en iOS para que no se abra a pantalla completa. -->
+<video id="arvid" src="assets/video-ohiggins.mp4" preload="auto" playsinline webkit-playsinline crossorigin="anonymous" style="display:none"></video>
+
+<div id="ar-container"></div>
+
+<!-- Barra superior -->
+<div class="top">
+  <a class="back" href="index.html#cultura" id="btnBack">Volver</a>
+  <div class="status" id="status">Apunta la cámara al retrato de O’Higgins</div>
+</div>
+<div class="scan hide" id="scan"></div>
+
+<!-- Controles del video (aparecen tras la primera detección) -->
+<div class="controls" id="controls">
+  <div class="row">
+    <button class="ctl" id="btnBackTen" aria-label="Retroceder 10 segundos">
+      <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/><text x="12" y="16" font-size="6.5" text-anchor="middle" font-family="sans-serif" font-weight="700">10</text></svg>
+    </button>
+    <button class="ctl main" id="btnPlay" aria-label="Reproducir">
+      <svg viewBox="0 0 24 24" id="icoPlay"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <button class="ctl" id="btnMute" aria-label="Silenciar">
+      <svg viewBox="0 0 24 24" id="icoMute"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+    </button>
+    <input type="range" id="seek" min="0" max="100" value="0" step="0.1" aria-label="Progreso" />
+    <span class="time" id="time">0:00 / 0:00</span>
+  </div>
+  <button class="next" id="btnQuiz">Responder la pregunta ›</button>
+</div>
+
+<!-- Pantalla inicial -->
+<div class="overlay" id="overlay">
+  <img src="assets/ohiggins.jpg" alt="Retrato a escanear" />
+  <h1>Experiencia realidad aumentada</h1>
+  <p id="intro">Busca el retrato de Bernardo O’Higgins (impreso o en otra pantalla) y apúntalo con la cámara. El video aparecerá sobre la imagen.</p>
+  <button class="start" id="btnStart">Iniciar cámara</button>
+  <div id="loading" style="display:none">
+    <p id="loadingText">Preparando reconocimiento del retrato…</p>
+    <div class="bar"><i id="barFill"></i></div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIGURACIÓN
+   ===================================================================== */
+const TARGET_MIND = 'assets/targets.mind';   // archivo compilado con compiler.html (recomendado)
+const CACHE_KEY   = 'aula-ar-targets-v1';     // caché si se compila en el navegador
+
+const $ = id => document.getElementById(id);
+const video = $('arvid');
+let sceneEl = null, wantPlaying = false, targetVisible = false;
+
+/* =====================================================================
+   1) OBTENER EL ARCHIVO DE RECONOCIMIENTO (.mind)
+   - Si existe assets/targets.mind → se usa directo (rápido).
+   - Si no existe → se compila el retrato en el navegador (solo la 1ª vez, ~10-30 s)
+     dentro de un iframe oculto (compiler.html) y se guarda en caché.
+   ===================================================================== */
+async function getTargetSrc(){
+  try{
+    const r = await fetch(TARGET_MIND, {cache:'no-cache'});
+    const ct = r.headers.get('content-type') || '';
+    // Algunos hostings devuelven index.html (200) para archivos inexistentes → lo descartamos
+    if(r.ok && !ct.includes('text/html')) return URL.createObjectURL(await r.blob());
+  }catch(e){}
+
+  if('caches' in window){
+    try{
+      const c = await caches.open('aula-ar');
+      const hit = await c.match(CACHE_KEY);
+      if(hit) return URL.createObjectURL(await hit.blob());
+    }catch(e){}
+  }
+
+  const buffer = await compileInIframe();
+  const blob = new Blob([buffer], {type:'application/octet-stream'});
+  if('caches' in window){
+    try{ (await caches.open('aula-ar')).put(CACHE_KEY, new Response(blob)); }catch(e){}
+  }
+  return URL.createObjectURL(blob);
+}
+
+function compileInIframe(){
+  return new Promise((resolve, reject) => {
+    const f = document.createElement('iframe');
+    f.src = 'compiler.html?embed=1';
+    f.style.display = 'none';
+    const onMsg = e => {
+      if(e.source !== f.contentWindow) return;
+      const d = e.data || {};
+      if(d.type === 'mind-progress') setProgress(d.progress);
+      if(d.type === 'mind-done'){ cleanup(); resolve(d.buffer); }
+      if(d.type === 'mind-error'){ cleanup(); reject(new Error(d.message)); }
+    };
+    const cleanup = () => { window.removeEventListener('message', onMsg); f.remove(); };
+    window.addEventListener('message', onMsg);
+    document.body.appendChild(f);
+  });
+}
+function setProgress(p){
+  $('barFill').style.width = p.toFixed(0) + '%';
+  $('loadingText').textContent = `Preparando reconocimiento del retrato… ${p.toFixed(0)}%`;
+}
+
+/* =====================================================================
+   2) CREAR LA ESCENA AR
+   Escala: MindAR usa el ANCHO del retrato = 1 unidad. El retrato mide 1 × 1.23,
+   así que un video 16:9 de ancho 1 → alto 0.5625 queda perfecto encima.
+   ===================================================================== */
+function buildScene(targetSrc){
+  $('ar-container').innerHTML = `
+  <a-scene
+    mindar-image="imageTargetSrc: ${targetSrc}; maxTrack: 1; uiScanning: no; uiLoading: no; uiError: no;
+                  filterMinCF: 0.0001; filterBeta: 0.001"
+    color-space="sRGB" renderer="colorManagement: true; antialias: true"
+    vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false"
+    embedded style="width:100%;height:100%">
+
+    <!-- Cámara fija (la mueve MindAR). cursor+raycaster permiten TOCAR el video en 3D -->
+    <a-camera position="0 0 0" look-controls="enabled: false"
+              cursor="fuse: false; rayOrigin: mouse" raycaster="far: 10000; objects: .clickable"></a-camera>
+
+    <!-- Ancla: todo lo que está aquí dentro se pega al retrato detectado -->
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <a-entity id="videoGroup" position="0 0.12 0" scale="0.001 0.001 0.001">
+        <!-- Marco morado -->
+        <a-plane color="#7652F5" width="1.08" height="0.6425" material="shader: flat"></a-plane>
+        <!-- Video. shader: flat = no depende de luces → evita que se vea negro/oscuro -->
+        <a-video id="arVideo" class="clickable" src="#arvid" width="1" height="0.5625"
+                 position="0 0 0.005" material="shader: flat"></a-video>
+        <!-- Botón play 3D (se oculta al reproducir) -->
+        <a-entity id="playIcon" class="clickable" position="0 0 0.01">
+          <a-circle radius="0.11" color="#7652F5" material="shader: flat; opacity: 0.92; transparent: true"></a-circle>
+          <a-triangle vertex-a="-0.035 0.055 0.001" vertex-b="-0.035 -0.055 0.001" vertex-c="0.06 0 0.001"
+                      color="#FFFFFF" material="shader: flat"></a-triangle>
+        </a-entity>
+      </a-entity>
+
+      <!-- ===== PREGUNTA EN AR =====
+           Los textos se dibujan en <canvas> y se usan como textura (ver drawPanel):
+           la fuente por defecto de <a-text> NO trae tildes (á, ó), por eso no se usa. -->
+      <a-entity id="quizGroup" position="0 0.05 0.02" visible="false">
+        <a-plane id="qQuestion" width="1.08" height="0.30" position="0 0.33 0"></a-plane>
+        <a-plane id="qA" data-answer="ok"  width="0.52" height="0.20" position="-0.28 0.05 0"></a-plane>
+        <a-plane id="qB" data-answer="bad" width="0.52" height="0.20" position="0.28 0.05 0"></a-plane>
+        <a-plane id="qFeedback" width="1.08" height="0.30" position="0 -0.24 0" visible="false"></a-plane>
+        <a-plane id="qReplay" width="0.70" height="0.13" position="0 -0.49 0" visible="false"></a-plane>
+        <a-entity id="confetti" position="0 0.05 0.02"></a-entity>
+      </a-entity>
+    </a-entity>
+  </a-scene>`;
+
+  sceneEl = document.querySelector('a-scene');
+  const target = $('target');
+  const group  = $('videoGroup');
+
+  // Clics 3D en las respuestas y en "ver video otra vez"
+  $('qA').addEventListener('click', () => answer('ok'));
+  $('qB').addEventListener('click', () => answer('bad'));
+  $('qReplay').addEventListener('click', replayVideo);
+  sceneEl.addEventListener('loaded', () => { renderQuestion(); setInteractive(); });
+
+  sceneEl.addEventListener('arReady', () => {
+    $('overlay').classList.add('hide');
+    $('scan').classList.remove('hide');
+  });
+  sceneEl.addEventListener('arError', () => showError(
+    'No se pudo abrir la cámara. Revisa que la página esté en HTTPS y que diste permiso de cámara al navegador.'));
+
+  // ---- Retrato detectado: aparece el video con animación ----
+  target.addEventListener('targetFound', () => {
+    targetVisible = true;
+    setStatus(quizOpen ? 'Toca la respuesta correcta sobre el retrato'
+                       : '¡Retrato detectado! Toca el video para reproducir', true);
+    $('scan').classList.add('hide');
+    $('controls').classList.add('show');
+    if(quizOpen) pop($('quizGroup'));
+    else { group.setAttribute('animation', 'property: scale; to: 1 1 1; dur: 450; easing: easeOutBack');
+           if(wantPlaying) video.play(); }
+  });
+
+  // ---- Retrato perdido: pausa (se reanuda al volver a detectarlo) ----
+  target.addEventListener('targetLost', () => {
+    targetVisible = false;
+    setStatus(quizOpen ? 'Apunta al retrato para responder la pregunta'
+                       : 'Apunta la cámara al retrato de O’Higgins', false);
+    $('scan').classList.remove('hide');
+    group.removeAttribute('animation');
+    group.setAttribute('scale', '0.001 0.001 0.001');
+    if(!video.paused){ video.pause(); wantPlaying = true; }
+  });
+
+  // Tocar el video o el ícono en 3D → play/pausa (ignorado mientras está la pregunta)
+  $('arVideo').addEventListener('click', () => { if(!quizOpen) togglePlay(); });
+  $('playIcon').addEventListener('click', () => { if(!quizOpen) togglePlay(); });
+}
+
+/* =====================================================================
+   2b) PREGUNTA DENTRO DE LA REALIDAD AUMENTADA
+   ===================================================================== */
+const C = { purple:'#7652F5', soft:'#EEEEFD', green:'#56C368', red:'#FF665C', white:'#FFFFFF' };
+const PX = 800;   // píxeles de canvas por unidad AR (nitidez del texto)
+let quizOpen = false, quizSolved = false;
+
+// Dibuja un panel redondeado con texto centrado y lo devuelve como imagen (dataURL)
+function drawPanel(w, h, {bg, color, text, size = 60, weight = 600, radius = 0.1}){
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * PX); cv.height = Math.round(h * PX);
+  const ctx = cv.getContext('2d'), r = Math.min(radius * PX, cv.height / 2);
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(0, 0, cv.width, cv.height, r); else ctx.rect(0, 0, cv.width, cv.height); // Safari antiguo
+  ctx.fill();
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${weight} ${size}px Signika, system-ui, sans-serif`;
+  // Ajuste de línea automático
+  const lines = [], maxW = cv.width * 0.88;
+  text.split('\n').forEach(par => {
+    let line = '';
+    par.split(' ').forEach(word => {
+      const test = line ? line + ' ' + word : word;
+      if(ctx.measureText(test).width > maxW && line){ lines.push(line); line = word; } else line = test;
+    });
+    lines.push(line);
+  });
+  const lh = size * 1.2, y0 = cv.height / 2 - (lines.length - 1) * lh / 2;
+  lines.forEach((l, i) => ctx.fillText(l, cv.width / 2, y0 + i * lh));
+  return cv.toDataURL('image/png');
+}
+function paint(el, opts){
+  const w = +el.getAttribute('width'), h = +el.getAttribute('height');
+  el.setAttribute('material', {shader: 'flat', src: drawPanel(w, h, opts), transparent: true, alphaTest: 0.05});
+}
+
+async function renderQuestion(){
+  try{ await document.fonts.load('600 60px Signika'); }catch(e){}
+  quizSolved = false;
+  paint($('qQuestion'), {bg: C.purple, color: C.white, text: '¿Dónde nació Bernardo O’Higgins?', size: 64});
+  paint($('qA'), {bg: C.soft, color: C.purple, text: 'Chillán',  size: 62});
+  paint($('qB'), {bg: C.soft, color: C.purple, text: 'Rancagua', size: 62});
+  paint($('qReplay'), {bg: C.white, color: C.purple, text: '↻ Ver el video otra vez', size: 40});
+  $('qFeedback').setAttribute('visible', false);
+  $('qReplay').setAttribute('visible', false);
+}
+
+function answer(key){
+  if(!quizOpen || quizSolved) return;
+  const ok = key === 'ok';
+  const btn = ok ? $('qA') : $('qB');
+  paint(btn, {bg: ok ? C.green : C.red, color: C.white, text: ok ? '✓ Chillán' : '✗ Rancagua', size: 62});
+  btn.setAttribute('animation__tap', 'property: scale; from: 0.9 0.9 1; to: 1 1 1; dur: 350; easing: easeOutBack');
+  paint($('qFeedback'), ok
+    ? {bg: C.white, color: '#1E7A33', text: '¡Correcto! Nació en Chillán el 20 de agosto de 1778.', size: 50}
+    : {bg: C.white, color: '#C0392B', text: 'Casi. En Rancagua fue la batalla de 1814. ¡Intenta otra vez!', size: 50});
+  $('qFeedback').setAttribute('visible', true);
+  pop($('qFeedback'));
+  if(navigator.vibrate) navigator.vibrate(ok ? 80 : [60, 40, 60]);
+
+  if(ok){
+    quizSolved = true;
+    $('qReplay').setAttribute('visible', true);
+    confetti();
+    setStatus('¡Respuesta correcta!', true);
+  } else {
+    // Vuelve el botón incorrecto a su estado normal para permitir reintentar
+    setTimeout(() => { if(!quizSolved) paint($('qB'), {bg: C.soft, color: C.purple, text: 'Rancagua', size: 62}); }, 1400);
+  }
+  setInteractive();
+}
+
+function openQuiz(){
+  quizOpen = true;
+  video.pause(); wantPlaying = false;
+  renderQuestion();
+  $('videoGroup').setAttribute('visible', false);
+  $('quizGroup').setAttribute('visible', true);
+  if(targetVisible) pop($('quizGroup'));
+  $('controls').classList.add('quiz');
+  $('btnQuiz').textContent = '‹ Volver al video';
+  setStatus(targetVisible ? 'Toca la respuesta correcta sobre el retrato'
+                          : 'Apunta al retrato para responder la pregunta', targetVisible);
+  setInteractive();
+}
+function closeQuiz(){
+  quizOpen = false;
+  $('quizGroup').setAttribute('visible', false);
+  $('videoGroup').setAttribute('visible', true);
+  $('controls').classList.remove('quiz');
+  $('btnQuiz').textContent = 'Responder la pregunta ›';
+  setStatus(targetVisible ? 'Toca el video para reproducir' : 'Apunta la cámara al retrato de O’Higgins', targetVisible);
+  setInteractive();
+}
+function replayVideo(){
+  if(!quizOpen) return;
+  closeQuiz();
+  video.currentTime = 0; video.play(); wantPlaying = true;
+}
+
+// Solo los elementos visibles reciben toques (los invisibles no deben "tapar" a otros)
+function setInteractive(){
+  const on = new Set(quizOpen
+    ? ['qA', 'qB', ...(quizSolved ? ['qReplay'] : [])]
+    : ['arVideo', 'playIcon']);
+  ['qA','qB','qReplay','arVideo','playIcon'].forEach(id => { const el = $(id); if(el) el.classList.toggle('clickable', on.has(id)); });
+  const cam = document.querySelector('a-camera');
+  if(cam && cam.components.raycaster) cam.components.raycaster.refreshObjects();
+}
+
+function pop(el){
+  el.setAttribute('scale', '0.001 0.001 0.001');
+  el.removeAttribute('animation__pop');
+  el.setAttribute('animation__pop', 'property: scale; to: 1 1 1; dur: 450; easing: easeOutBack');
+}
+
+// Confeti simple: pequeños planos de colores que salen disparados y se desvanecen
+function confetti(){
+  const box = $('confetti');
+  const colors = [C.purple, C.green, C.red, '#FFC54A', '#4FC3F7'];
+  for(let i = 0; i < 24; i++){
+    const p = document.createElement('a-plane');
+    const x = (Math.random() - 0.5) * 1.3, y = Math.random() * 0.7 + 0.1;
+    p.setAttribute('width', 0.035); p.setAttribute('height', 0.02);
+    p.setAttribute('material', {shader: 'flat', color: colors[i % colors.length], transparent: true, side: 'double'});
+    p.setAttribute('animation__move', `property: position; from: 0 0 0; to: ${x} ${y} 0.05; dur: 900; easing: easeOutQuad`);
+    p.setAttribute('animation__spin', `property: rotation; to: 0 0 ${Math.random() * 720 - 360}; dur: 900`);
+    p.setAttribute('animation__fade', 'property: components.material.material.opacity; from: 1; to: 0; dur: 500; delay: 700');
+    box.appendChild(p);
+    setTimeout(() => p.remove(), 1300);
+  }
+}
+
+function setStatus(text, found){
+  $('status').textContent = text;
+  $('status').classList.toggle('found', !!found);
+}
+
+/* =====================================================================
+   3) CONTROLES DEL VIDEO
+   ===================================================================== */
+const ICON_PLAY  = '<path d="M8 5v14l11-7z"/>';
+const ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+const ICON_VOL   = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/>';
+const ICON_MUTED = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.6-.6L15.2 9.8 17.4 12l-2.2 2.2 1.4 1.4 2.2-2.2 2.2 2.2 1.4-1.4-2.2-2.2 2.2-2.2-1.4-1.4-2.2 2.2z"/>';
+
+function togglePlay(){
+  if(video.paused){ video.play(); wantPlaying = true; }
+  else { video.pause(); wantPlaying = false; }
+}
+const fmt = s => isFinite(s) ? `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}` : '0:00';
+
+video.addEventListener('play',  () => { $('icoPlay').innerHTML = ICON_PAUSE; setIcon3D(false); });
+video.addEventListener('pause', () => { $('icoPlay').innerHTML = ICON_PLAY;  setIcon3D(true);  });
+video.addEventListener('ended', () => {
+  wantPlaying = false;
+  openQuiz();   // al terminar el video, la pregunta aparece sobre el retrato
+});
+video.addEventListener('timeupdate', () => {
+  if(!seeking) $('seek').value = video.duration ? (video.currentTime / video.duration) * 100 : 0;
+  $('time').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+});
+function setIcon3D(visible){ const i = $('playIcon'); if(i) i.setAttribute('visible', visible); }
+
+let seeking = false;
+$('seek').addEventListener('input',  () => { seeking = true; });
+$('seek').addEventListener('change', () => {
+  if(video.duration) video.currentTime = ($('seek').value / 100) * video.duration;
+  seeking = false;
+});
+$('btnPlay').addEventListener('click', togglePlay);
+$('btnBackTen').addEventListener('click', () => { video.currentTime = Math.max(0, video.currentTime - 10); });
+$('btnMute').addEventListener('click', () => {
+  video.muted = !video.muted;
+  $('icoMute').innerHTML = video.muted ? ICON_MUTED : ICON_VOL;
+});
+
+/* =====================================================================
+   4) INICIO (requiere un toque del usuario)
+   El toque "desbloquea" el audio del video en iOS/Android: sin esto
+   el navegador bloquearía video.play() con sonido.
+   ===================================================================== */
+$('btnStart').addEventListener('click', async () => {
+  if(!window.isSecureContext){
+    return showError('La cámara solo funciona en HTTPS o en localhost. Sube el proyecto a un hosting con HTTPS (Vercel/Netlify) o usa ngrok.');
+  }
+  // Desbloqueo de reproducción con sonido
+  video.muted = true;
+  video.play().then(() => { video.pause(); video.currentTime = 0; video.muted = false; }).catch(() => { video.muted = false; });
+
+  $('btnStart').style.display = 'none';
+  $('intro').style.display = 'none';
+  $('loading').style.display = 'block';
+  $('loadingText').textContent = 'Cargando…';
+
+  try{
+    const src = await getTargetSrc();
+    $('loadingText').textContent = 'Abriendo cámara…';
+    buildScene(src);
+  }catch(err){
+    console.error(err);
+    showError('No se pudo preparar el reconocimiento de la imagen: ' + err.message);
+  }
+});
+
+function showError(msg){
+  $('overlay').classList.remove('hide');
+  $('btnStart').style.display = 'none';
+  $('loading').style.display = 'none';
+  $('intro').style.display = 'block';
+  $('intro').innerHTML = `<span class="err">${msg}</span>`;
+}
+
+/* Al salir: apaga la cámara (evita que el LED quede encendido) */
+function stopAR(){
+  try{ sceneEl && sceneEl.systems['mindar-image-system'].stop(); }catch(e){}
+  video.pause();
+}
+$('btnBack').addEventListener('click', stopAR);
+$('btnQuiz').addEventListener('click', () => quizOpen ? closeQuiz() : openQuiz());
+window.addEventListener('pagehide', stopAR);
+</script>
+</body>
+</html>
