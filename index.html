@@ -66,6 +66,19 @@
     .feedback{margin-top:16px;padding:14px 16px;border-radius:12px;background:var(--card);font-size:15px;line-height:1.4;display:none}
     .feedback.show{display:block}
 
+
+    /* ===== Puntaje ===== */
+    .score{display:inline-flex;align-items:center;gap:6px;background:#FFC54A;color:#3D2A00;font-weight:700;font-size:15px;
+      padding:7px 12px;border-radius:20px;box-shadow:0 4px 14px rgba(255,197,74,.45);white-space:nowrap}
+    .score svg{width:16px;height:16px;fill:#3D2A00}
+    .score.bump{animation:scoreBump .6s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes scoreBump{0%{transform:scale(1)}35%{transform:scale(1.3) rotate(-4deg)}100%{transform:scale(1)}}
+    .plus{position:fixed;z-index:60;font-weight:700;font-size:26px;color:#1E7A33;text-shadow:0 2px 0 #fff,0 0 12px rgba(255,255,255,.9);
+      pointer-events:none;animation:plusUp 1.3s ease-out forwards}
+    @keyframes plusUp{0%{opacity:0;transform:translate(-50%,0) scale(.6)}20%{opacity:1;transform:translate(-50%,-14px) scale(1.15)}
+      100%{opacity:0;transform:translate(-50%,-90px) scale(1)}}
+
+    .score.fixed{position:fixed;z-index:40;top:max(18px,env(safe-area-inset-top));right:max(16px,calc(50% - 199px))}
     /* Toast */
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:#222;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
     .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -139,6 +152,9 @@
   </style>
 </head>
 <body>
+<!-- Puntaje visible en todas las pantallas -->
+<div class="score fixed" title="Tus puntos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg><span data-score>0 pts</span></div>
+
 <main class="app">
 
   <!-- ============ PANTALLA 1: Asignaturas ============ -->
@@ -269,6 +285,54 @@
     if(e.target.closest('[data-soon]')) toast('Disponible próximamente en el prototipo');
   });
 
+/* =====================================================================
+   SISTEMA DE PUNTOS (compartido entre index.html y ar.html)
+   - Correcta al primer intento: +100
+   - Correcta después de equivocarse: +50
+   - Cada pregunta da puntos UNA sola vez (repetirla no suma más).
+   Se guarda en localStorage → persiste en ese celular/navegador.
+   ===================================================================== */
+const Score = {
+  KEY: 'aula-ar-puntos-v1',
+  RULES: { firstTry: 100, retry: 50 },
+  load(){
+    try{ return JSON.parse(localStorage.getItem(this.KEY)) || {total: 0, q: {}}; }
+    catch(e){ return {total: 0, q: {}}; }
+  },
+  save(d){ try{ localStorage.setItem(this.KEY, JSON.stringify(d)); }catch(e){} },
+  total(){ return this.load().total; },
+  // Registra un intento y devuelve {points, total, already, earned}
+  answer(qid, correct){
+    const d = this.load();
+    const q = d.q[qid] || (d.q[qid] = {errors: 0, points: 0, solved: false});
+    if(q.solved) return {points: 0, total: d.total, already: true, earned: q.points};
+    if(!correct){ q.errors++; this.save(d); return {points: 0, total: d.total}; }
+    q.solved = true;
+    q.points = q.errors === 0 ? this.RULES.firstTry : this.RULES.retry;
+    d.total += q.points;
+    this.save(d);
+    return {points: q.points, total: d.total, retry: q.errors > 0};
+  },
+  reset(){ this.save({total: 0, q: {}}); }
+};
+const QID = 'ohiggins-nacimiento';   // identificador de la pregunta
+
+/* ---- Interfaz del puntaje ---- */
+function renderScore(animate){
+  document.querySelectorAll('[data-score]').forEach(el => {
+    el.textContent = Score.total() + ' pts';
+    if(animate){ const pill = el.closest('.score'); pill.classList.remove('bump'); void pill.offsetWidth; pill.classList.add('bump'); }
+  });
+}
+// Texto flotante "+100" sobre un elemento
+function floatPoints(points, anchorEl){
+  const r = anchorEl.getBoundingClientRect(), p = document.createElement('div');
+  p.className = 'plus'; p.textContent = '+' + points;
+  p.style.left = (r.left + r.width / 2) + 'px'; p.style.top = (r.top - 10) + 'px';
+  document.body.appendChild(p); setTimeout(() => p.remove(), 1400);
+}
+renderScore(false);
+
   /* ===== Quiz ===== */
   const fb = document.getElementById('feedback');
   document.querySelectorAll('.answer').forEach(btn => btn.addEventListener('click', () => {
@@ -279,9 +343,14 @@
     if(ok) confetti();
     if(navigator.vibrate) navigator.vibrate(ok ? 80 : [60, 40, 60]);
     fb.classList.remove('show'); void fb.offsetWidth;
-    fb.innerHTML = ok
-      ? '<b>¡Correcto!</b> Bernardo O’Higgins nació en Chillán el 20 de agosto de 1778.'
-      : '<b>No es correcto.</b> En Rancagua dio una batalla famosa (1814), pero nació en <b>Chillán</b>.';
+    const res = Score.answer(QID, ok);
+    const dato = 'Bernardo O’Higgins nació en Chillán el 20 de agosto de 1778.';
+    if(ok && res.points){ floatPoints(res.points, btn); setTimeout(() => renderScore(true), 450); }
+    fb.innerHTML = !ok
+      ? '<b>No es correcto.</b> En Rancagua dio una batalla famosa (1814), pero nació en <b>Chillán</b>. Si aciertas ahora ganas <b>50 puntos</b>.'
+      : res.already ? `<b>¡Correcto!</b> ${dato} Ya habías ganado tus ${res.earned} puntos en esta pregunta.`
+      : res.retry   ? `<b>¡Bien! +50 puntos</b> (al segundo intento). ${dato}`
+      :               `<b>¡Excelente! +100 puntos.</b> ${dato}`;
     fb.classList.add('show');
   }));
 

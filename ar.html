@@ -32,6 +32,18 @@
     @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.07)}100%{transform:scale(1)}}
 
     /* Guía de escaneo (marco) */
+    /* ===== Puntaje ===== */
+    .score{display:inline-flex;align-items:center;gap:6px;background:#FFC54A;color:#3D2A00;font-weight:700;font-size:15px;
+      padding:7px 12px;border-radius:20px;box-shadow:0 4px 14px rgba(255,197,74,.45);white-space:nowrap}
+    .score svg{width:16px;height:16px;fill:#3D2A00}
+    .score.bump{animation:scoreBump .6s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes scoreBump{0%{transform:scale(1)}35%{transform:scale(1.3) rotate(-4deg)}100%{transform:scale(1)}}
+    .plus{position:fixed;z-index:60;font-weight:700;font-size:26px;color:#1E7A33;text-shadow:0 2px 0 #fff,0 0 12px rgba(255,255,255,.9);
+      pointer-events:none;animation:plusUp 1.3s ease-out forwards}
+    @keyframes plusUp{0%{opacity:0;transform:translate(-50%,0) scale(.6)}20%{opacity:1;transform:translate(-50%,-14px) scale(1.15)}
+      100%{opacity:0;transform:translate(-50%,-90px) scale(1)}}
+    .top .score{flex:none;font-size:14px;padding:8px 10px}
+
     /* Guía: 4 esquinas + línea láser que recorre el marco + "respiración" suave */
     .scan{position:fixed;z-index:10;left:50%;top:50%;width:62vw;max-width:300px;aspect-ratio:814/1000;transform:translate(-50%,-50%);
       pointer-events:none;transition:opacity .35s,transform .35s;overflow:hidden;border-radius:3px;
@@ -118,6 +130,7 @@
 <div class="top">
   <a class="back" href="index.html#cultura" id="btnBack">Volver</a>
   <div class="status" id="status">Apunta la cámara al retrato de O’Higgins</div>
+  <div class="score" title="Tus puntos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg><span data-score>0 pts</span></div>
 </div>
 <div class="scan hide" id="scan"></div>
 
@@ -268,6 +281,8 @@ function buildScene(targetSrc){
         <a-plane id="qFeedback" width="1.08" height="0.30" position="0 -0.24 0" visible="false"></a-plane>
         <a-plane id="qReplay" width="0.70" height="0.13" position="0 -0.49 0" visible="false"></a-plane>
         <a-entity id="confetti" position="0 0.05 0.02"></a-entity>
+        <!-- "+100" / "+50" que sube y se desvanece al acertar -->
+        <a-plane id="qPoints" width="0.46" height="0.2" position="0 0.2 0.06" visible="false"></a-plane>
       </a-entity>
     </a-entity>
   </a-scene>`;
@@ -318,6 +333,54 @@ function buildScene(targetSrc){
   $('arVideo').addEventListener('click', () => { if(!quizOpen) togglePlay(); });
   $('playIcon').addEventListener('click', () => { if(!quizOpen) togglePlay(); });
 }
+
+/* =====================================================================
+   SISTEMA DE PUNTOS (compartido entre index.html y ar.html)
+   - Correcta al primer intento: +100
+   - Correcta después de equivocarse: +50
+   - Cada pregunta da puntos UNA sola vez (repetirla no suma más).
+   Se guarda en localStorage → persiste en ese celular/navegador.
+   ===================================================================== */
+const Score = {
+  KEY: 'aula-ar-puntos-v1',
+  RULES: { firstTry: 100, retry: 50 },
+  load(){
+    try{ return JSON.parse(localStorage.getItem(this.KEY)) || {total: 0, q: {}}; }
+    catch(e){ return {total: 0, q: {}}; }
+  },
+  save(d){ try{ localStorage.setItem(this.KEY, JSON.stringify(d)); }catch(e){} },
+  total(){ return this.load().total; },
+  // Registra un intento y devuelve {points, total, already, earned}
+  answer(qid, correct){
+    const d = this.load();
+    const q = d.q[qid] || (d.q[qid] = {errors: 0, points: 0, solved: false});
+    if(q.solved) return {points: 0, total: d.total, already: true, earned: q.points};
+    if(!correct){ q.errors++; this.save(d); return {points: 0, total: d.total}; }
+    q.solved = true;
+    q.points = q.errors === 0 ? this.RULES.firstTry : this.RULES.retry;
+    d.total += q.points;
+    this.save(d);
+    return {points: q.points, total: d.total, retry: q.errors > 0};
+  },
+  reset(){ this.save({total: 0, q: {}}); }
+};
+const QID = 'ohiggins-nacimiento';   // identificador de la pregunta
+
+/* ---- Interfaz del puntaje ---- */
+function renderScore(animate){
+  document.querySelectorAll('[data-score]').forEach(el => {
+    el.textContent = Score.total() + ' pts';
+    if(animate){ const pill = el.closest('.score'); pill.classList.remove('bump'); void pill.offsetWidth; pill.classList.add('bump'); }
+  });
+}
+// Texto flotante "+100" sobre un elemento
+function floatPoints(points, anchorEl){
+  const r = anchorEl.getBoundingClientRect(), p = document.createElement('div');
+  p.className = 'plus'; p.textContent = '+' + points;
+  p.style.left = (r.left + r.width / 2) + 'px'; p.style.top = (r.top - 10) + 'px';
+  document.body.appendChild(p); setTimeout(() => p.remove(), 1400);
+}
+renderScore(false);
 
 /* =====================================================================
    2b) PREGUNTA DENTRO DE LA REALIDAD AUMENTADA
@@ -373,9 +436,14 @@ function answer(key){
   const btn = ok ? $('qA') : $('qB');
   paint(btn, {bg: ok ? C.green : C.red, color: C.white, text: ok ? '✓ Chillán' : '✗ Rancagua', size: 62});
   btn.setAttribute('animation__tap', 'property: scale; from: 0.9 0.9 1; to: 1 1 1; dur: 350; easing: easeOutBack');
-  paint($('qFeedback'), ok
-    ? {bg: C.white, color: '#1E7A33', text: '¡Correcto! Nació en Chillán el 20 de agosto de 1778.', size: 50}
-    : {bg: C.white, color: '#C0392B', text: 'Casi. En Rancagua fue la batalla de 1814. ¡Intenta otra vez!', size: 50});
+  // Puntos: 100 al primer intento, 50 si antes se equivocó
+  const res = Score.answer(QID, ok);
+  const msg = !ok        ? 'Casi. En Rancagua fue la batalla de 1814. ¡Si aciertas ahora ganas 50 puntos!'
+            : res.already ? '¡Correcto! Nació en Chillán (1778). Ya habías ganado tus puntos.'
+            : res.retry   ? '¡Bien! +50 puntos. Nació en Chillán el 20 de agosto de 1778.'
+            :               '¡Excelente! +100 puntos. Nació en Chillán el 20 de agosto de 1778.';
+  paint($('qFeedback'), {bg: C.white, color: ok ? '#1E7A33' : '#C0392B', text: msg, size: 46});
+  if(ok && res.points){ floatPoints3D(res.points); setTimeout(() => renderScore(true), 500); }
   $('qFeedback').setAttribute('visible', true);
   pop($('qFeedback'));
   if(navigator.vibrate) navigator.vibrate(ok ? 80 : [60, 40, 60]);
@@ -384,7 +452,7 @@ function answer(key){
     quizSolved = true;
     $('qReplay').setAttribute('visible', true);
     confetti();
-    setStatus('¡Respuesta correcta!', true);
+    setStatus(res.points ? `¡Respuesta correcta! +${res.points} puntos` : '¡Respuesta correcta!', true);
   } else {
     shake(btn);
     // Vuelve el botón incorrecto a su estado normal para permitir reintentar
@@ -462,6 +530,17 @@ function shake(el){
   el.setAttribute('animation__shake', `property: position; from: ${x - 0.025} ${y} ${z}; to: ${x + 0.025} ${y} ${z};
                    dir: alternate; loop: 5; dur: 55; easing: easeInOutSine`);
   setTimeout(() => { el.removeAttribute('animation__shake'); el.setAttribute('position', {x, y, z}); }, 360);
+}
+// "+100" en 3D: aparece sobre el botón correcto, sube y se desvanece
+function floatPoints3D(points){
+  const el = $('qPoints');
+  paint(el, {bg: '#FFC54A', color: '#3D2A00', text: '+' + points, size: 96, weight: 700, radius: 0.1});
+  el.setAttribute('visible', true);
+  ['animation__up','animation__fade','animation__in'].forEach(k => el.removeAttribute(k));
+  el.setAttribute('animation__in', 'property: scale; from: 0.3 0.3 1; to: 1 1 1; dur: 350; easing: easeOutBack');
+  el.setAttribute('animation__up', 'property: position; from: -0.28 0.12 0.06; to: -0.28 0.45 0.06; dur: 1300; easing: easeOutCubic');
+  el.setAttribute('animation__fade', 'property: components.material.material.opacity; from: 1; to: 0; dur: 500; delay: 900');
+  setTimeout(() => el.setAttribute('visible', false), 1450);
 }
 // Onda expansiva al detectar el retrato
 function detectBurst(){
