@@ -13,7 +13,8 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    :root{--purple:#7652F5;--green:#56C368;--red:#FF665C;--bg:#F5F5FF}
+    :root{--purple:#7652F5;--green:#56C368;--red:#FF665C;--bg:#F5F5FF;
+      --ease-out:cubic-bezier(.22,1,.36,1);--ease-back:cubic-bezier(.34,1.56,.64,1)}
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     html,body{height:100%;overflow:hidden;background:#000;font-family:"Signika",system-ui,sans-serif}
     button,a{font:inherit;border:0;cursor:pointer;text-decoration:none}
@@ -24,37 +25,85 @@
     /* ===== Barra superior ===== */
     .top{position:fixed;z-index:20;top:max(16px,env(safe-area-inset-top));left:16px;right:16px;display:flex;gap:10px;align-items:center}
     .back{background:var(--purple);color:#fff;font-weight:600;font-size:18px;padding:8px 22px;border-radius:12px}
-    .status{flex:1;background:rgba(20,16,40,.72);color:#fff;font-size:14px;padding:9px 12px;border-radius:12px;backdrop-filter:blur(6px);text-align:center}
+    .status{flex:1;background:rgba(20,16,40,.72);color:#fff;font-size:14px;padding:9px 12px;border-radius:12px;backdrop-filter:blur(6px);text-align:center;
+      transition:background .35s ease}
     .status.found{background:rgba(86,195,104,.92)}
+    .status.bump{animation:bump .45s var(--ease-back)}
+    @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.07)}100%{transform:scale(1)}}
 
     /* Guía de escaneo (marco) */
+    /* Guía: 4 esquinas + línea láser que recorre el marco + "respiración" suave */
     .scan{position:fixed;z-index:10;left:50%;top:50%;width:62vw;max-width:300px;aspect-ratio:814/1000;transform:translate(-50%,-50%);
-      border:3px dashed rgba(255,255,255,.85);border-radius:18px;pointer-events:none;transition:opacity .3s}
-    .scan.hide{opacity:0}
+      pointer-events:none;transition:opacity .35s,transform .35s;overflow:hidden;border-radius:3px;
+      --c:rgba(255,255,255,.95);--l:34px;--w:4px;
+      background:
+        linear-gradient(var(--c),var(--c)) top left/var(--l) var(--w),   linear-gradient(var(--c),var(--c)) top left/var(--w) var(--l),
+        linear-gradient(var(--c),var(--c)) top right/var(--l) var(--w),  linear-gradient(var(--c),var(--c)) top right/var(--w) var(--l),
+        linear-gradient(var(--c),var(--c)) bottom left/var(--l) var(--w),linear-gradient(var(--c),var(--c)) bottom left/var(--w) var(--l),
+        linear-gradient(var(--c),var(--c)) bottom right/var(--l) var(--w),linear-gradient(var(--c),var(--c)) bottom right/var(--w) var(--l);
+      background-repeat:no-repeat;animation:breathe 2.2s ease-in-out infinite}
+    .scan::after{content:"";position:absolute;left:6%;right:6%;height:3px;border-radius:3px;
+      background:linear-gradient(90deg,transparent,#A58BFF,#fff,#A58BFF,transparent);box-shadow:0 0 14px 3px rgba(165,139,255,.8);
+      animation:laser 2.4s ease-in-out infinite}
+    .scan.hide{opacity:0;transform:translate(-50%,-50%) scale(1.15)}
+    @keyframes breathe{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.03)}}
+    @keyframes laser{0%{top:4%}50%{top:94%}100%{top:4%}}
 
     /* ===== Controles de reproducción ===== */
     .controls{position:fixed;z-index:20;left:16px;right:16px;bottom:max(16px,env(safe-area-inset-bottom));
-      background:rgba(255,255,255,.96);border-radius:20px;padding:12px 14px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.25)}
-    .controls.show{display:block}
+      background:rgba(255,255,255,.96);border-radius:20px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,.25);
+      transform:translateY(140%);opacity:0;pointer-events:none;transition:transform .5s var(--ease-back),opacity .3s}
+    .controls.show{transform:none;opacity:1;pointer-events:auto}
+    .ctl{transition:transform .2s var(--ease-back),background .2s}
+    .ctl:active{transform:scale(.88)}
+    .ctl.main{box-shadow:0 0 0 0 rgba(118,82,245,.5)}
+    .ctl.main.idle{animation:ring 1.8s ease-out infinite}
+    @keyframes ring{0%{box-shadow:0 0 0 0 rgba(118,82,245,.5)}100%{box-shadow:0 0 0 14px rgba(118,82,245,0)}}
+    .row{transition:opacity .3s}
     .row{display:flex;align-items:center;gap:10px}
     .ctl{width:46px;height:46px;border-radius:50%;background:#EEEEFD;color:var(--purple);display:grid;place-items:center;flex:none}
     .ctl.main{width:54px;height:54px;background:var(--purple);color:#fff}
     .ctl svg{width:22px;height:22px;fill:currentColor}
-    .time{font-size:12px;color:#555;min-width:78px;text-align:right}
-    input[type=range]{flex:1;accent-color:var(--purple)}
+    .time{font-size:12px;color:#555;white-space:nowrap;text-align:right}
+    input[type=range]{flex:1;min-width:0;accent-color:var(--purple)}
     .controls.quiz .row{display:none}
+    .next{transition:transform .2s var(--ease-back),filter .2s}
+    .next:active{transform:scale(.96)}
     .next{display:block;width:100%;margin-top:10px;background:var(--purple);color:#fff;font-weight:600;font-size:17px;padding:12px;border-radius:22px;text-align:center}
 
     /* ===== Pantalla de inicio / carga / error ===== */
     .overlay{position:fixed;z-index:30;inset:0;background:var(--bg);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px;text-align:center;color:#3D3D3F}
-    .overlay.hide{display:none}
-    .overlay img{width:150px;border-radius:14px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+    .overlay{transition:opacity .5s ease,visibility .5s,transform .5s ease}
+    .overlay.hide{opacity:0;visibility:hidden;transform:scale(1.04)}
+    .overlay img{width:150px;border-radius:14px;margin-bottom:20px;box-shadow:0 8px 24px rgba(0,0,0,.18);animation:float 3.2s ease-in-out infinite}
+    .overlay > *{animation:rise .6s var(--ease-out) backwards}
+    .overlay > :nth-child(2){animation-delay:.08s} .overlay > :nth-child(3){animation-delay:.16s}
+    .overlay > :nth-child(4){animation-delay:.24s} .overlay > :nth-child(5){animation-delay:.24s}
+    .overlay > img{animation:rise .6s var(--ease-out) backwards, float 3.2s ease-in-out .6s infinite}
+    @keyframes float{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-10px) rotate(1.5deg)}}
+    @keyframes rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
     .overlay h1{font-size:24px;color:var(--purple);margin-bottom:8px}
     .overlay p{font-size:15px;line-height:1.45;max-width:340px;margin-bottom:22px}
-    .start{background:var(--purple);color:#fff;font-size:19px;font-weight:600;padding:16px 34px;border-radius:26px}
+    .start{background:var(--purple);color:#fff;font-size:19px;font-weight:600;padding:16px 34px;border-radius:26px;
+      transition:transform .2s var(--ease-back)}
+    .start:active{transform:scale(.94)}
+    .overlay > .start{animation:rise .6s var(--ease-out) .24s backwards, ring 1.8s ease-out 1s infinite}
     .bar{width:240px;height:8px;background:#E3DEFD;border-radius:8px;overflow:hidden;margin-top:6px}
-    .bar i{display:block;height:100%;width:0;background:var(--purple);transition:width .2s}
+    .bar i{display:block;height:100%;width:0;transition:width .3s ease;
+      background:linear-gradient(90deg,var(--purple) 0%,#A58BFF 50%,var(--purple) 100%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+    @keyframes shimmer{to{background-position:-200% 0}}
     .err{color:var(--red);font-weight:600}
+
+    /* Entrada/salida de la página */
+    body{animation:pageIn .4s ease both}
+    body.leaving{animation:pageOut .3s ease forwards}
+    @keyframes pageIn{from{opacity:0}to{opacity:1}}
+    @keyframes pageOut{to{opacity:0}}
+    @view-transition{navigation:auto}
+
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+    }
   </style>
 </head>
 <body>
@@ -78,7 +127,7 @@
     <button class="ctl" id="btnBackTen" aria-label="Retroceder 10 segundos">
       <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/><text x="12" y="16" font-size="6.5" text-anchor="middle" font-family="sans-serif" font-weight="700">10</text></svg>
     </button>
-    <button class="ctl main" id="btnPlay" aria-label="Reproducir">
+    <button class="ctl main idle" id="btnPlay" aria-label="Reproducir">
       <svg viewBox="0 0 24 24" id="icoPlay"><path d="M8 5v14l11-7z"/></svg>
     </button>
     <button class="ctl" id="btnMute" aria-label="Silenciar">
@@ -147,7 +196,11 @@ function compileInIframe(){
   return new Promise((resolve, reject) => {
     const f = document.createElement('iframe');
     f.src = 'compiler.html?embed=1';
-    f.style.display = 'none';
+    // OJO: no usar display:none → en iOS/Android el iframe oculto queda "congelado" y la compilación no termina.
+    f.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0;pointer-events:none;border:0';
+    // Vigilante: si en 90 s no termina, mostramos un error útil en vez de quedar pegados
+    const timer = setTimeout(() => { cleanup(); reject(new Error(
+      'el celular tardó demasiado en preparar el retrato. Genera assets/targets.mind con compiler.html en un computador y súbelo al proyecto.')); }, 90000);
     const onMsg = e => {
       if(e.source !== f.contentWindow) return;
       const d = e.data || {};
@@ -155,14 +208,16 @@ function compileInIframe(){
       if(d.type === 'mind-done'){ cleanup(); resolve(d.buffer); }
       if(d.type === 'mind-error'){ cleanup(); reject(new Error(d.message)); }
     };
-    const cleanup = () => { window.removeEventListener('message', onMsg); f.remove(); };
+    const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', onMsg); f.remove(); };
     window.addEventListener('message', onMsg);
     document.body.appendChild(f);
   });
 }
 function setProgress(p){
   $('barFill').style.width = p.toFixed(0) + '%';
-  $('loadingText').textContent = `Preparando reconocimiento del retrato… ${p.toFixed(0)}%`;
+  $('loadingText').textContent = p >= 99.5
+    ? 'Finalizando… (solo la primera vez)'
+    : `Preparando reconocimiento del retrato… ${p.toFixed(0)}%`;
 }
 
 /* =====================================================================
@@ -185,6 +240,9 @@ function buildScene(targetSrc){
 
     <!-- Ancla: todo lo que está aquí dentro se pega al retrato detectado -->
     <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <!-- Onda de "detectado": se expande y desvanece cada vez que se reconoce el retrato -->
+      <a-ring id="detectRing" radius-inner="0.56" radius-outer="0.6" position="0 0 0.001" visible="false"
+              material="shader: flat; color: #A58BFF; transparent: true; opacity: 0"></a-ring>
       <a-entity id="videoGroup" position="0 0.12 0" scale="0.001 0.001 0.001">
         <!-- Marco morado -->
         <a-plane color="#7652F5" width="1.08" height="0.6425" material="shader: flat"></a-plane>
@@ -192,7 +250,8 @@ function buildScene(targetSrc){
         <a-video id="arVideo" class="clickable" src="#arvid" width="1" height="0.5625"
                  position="0 0 0.005" material="shader: flat"></a-video>
         <!-- Botón play 3D (se oculta al reproducir) -->
-        <a-entity id="playIcon" class="clickable" position="0 0 0.01">
+        <a-entity id="playIcon" class="clickable" position="0 0 0.01"
+                  animation__pulse="property: scale; from: 1 1 1; to: 1.12 1.12 1; dir: alternate; loop: true; dur: 700; easing: easeInOutSine">
           <a-circle radius="0.11" color="#7652F5" material="shader: flat; opacity: 0.92; transparent: true"></a-circle>
           <a-triangle vertex-a="-0.035 0.055 0.001" vertex-b="-0.035 -0.055 0.001" vertex-c="0.06 0 0.001"
                       color="#FFFFFF" material="shader: flat"></a-triangle>
@@ -237,8 +296,10 @@ function buildScene(targetSrc){
                        : '¡Retrato detectado! Toca el video para reproducir', true);
     $('scan').classList.add('hide');
     $('controls').classList.add('show');
-    if(quizOpen) pop($('quizGroup'));
-    else { group.setAttribute('animation', 'property: scale; to: 1 1 1; dur: 450; easing: easeOutBack');
+    detectBurst();
+    if(quizOpen) staggerQuiz();
+    else { group.removeAttribute('animation');
+           group.setAttribute('animation', 'property: scale; from: 0.001 0.001 0.001; to: 1 1 1; dur: 550; delay: 120; easing: easeOutBack');
            if(wantPlaying) video.play(); }
   });
 
@@ -325,6 +386,7 @@ function answer(key){
     confetti();
     setStatus('¡Respuesta correcta!', true);
   } else {
+    shake(btn);
     // Vuelve el botón incorrecto a su estado normal para permitir reintentar
     setTimeout(() => { if(!quizSolved) paint($('qB'), {bg: C.soft, color: C.purple, text: 'Rancagua', size: 62}); }, 1400);
   }
@@ -335,9 +397,13 @@ function openQuiz(){
   quizOpen = true;
   video.pause(); wantPlaying = false;
   renderQuestion();
-  $('videoGroup').setAttribute('visible', false);
-  $('quizGroup').setAttribute('visible', true);
-  if(targetVisible) pop($('quizGroup'));
+  // Transición: el video se encoge y luego entra la pregunta por partes
+  shrink($('videoGroup'), () => {
+    $('videoGroup').setAttribute('visible', false);
+    $('quizGroup').setAttribute('visible', true);
+    $('quizGroup').setAttribute('scale', '1 1 1');
+    if(targetVisible) staggerQuiz();
+  });
   $('controls').classList.add('quiz');
   $('btnQuiz').textContent = '‹ Volver al video';
   setStatus(targetVisible ? 'Toca la respuesta correcta sobre el retrato'
@@ -346,8 +412,11 @@ function openQuiz(){
 }
 function closeQuiz(){
   quizOpen = false;
-  $('quizGroup').setAttribute('visible', false);
-  $('videoGroup').setAttribute('visible', true);
+  shrink($('quizGroup'), () => {
+    $('quizGroup').setAttribute('visible', false);
+    $('videoGroup').setAttribute('visible', true);
+    pop($('videoGroup'));
+  });
   $('controls').classList.remove('quiz');
   $('btnQuiz').textContent = 'Responder la pregunta ›';
   setStatus(targetVisible ? 'Toca el video para reproducir' : 'Apunta la cámara al retrato de O’Higgins', targetVisible);
@@ -369,10 +438,38 @@ function setInteractive(){
   if(cam && cam.components.raycaster) cam.components.raycaster.refreshObjects();
 }
 
-function pop(el){
-  el.setAttribute('scale', '0.001 0.001 0.001');
+/* ---------- Animaciones 3D reutilizables ---------- */
+// Aparece "rebotando" desde tamaño cero (delay opcional en ms)
+function pop(el, delay = 0){
+  el.removeAttribute('animation');
   el.removeAttribute('animation__pop');
-  el.setAttribute('animation__pop', 'property: scale; to: 1 1 1; dur: 450; easing: easeOutBack');
+  el.setAttribute('scale', '0.001 0.001 0.001');
+  el.setAttribute('animation__pop', `property: scale; from: 0.001 0.001 0.001; to: 1 1 1; dur: 450; delay: ${delay}; easing: easeOutBack`);
+}
+// Se encoge y al terminar ejecuta "done"
+function shrink(el, done){
+  el.removeAttribute('animation__pop');
+  el.setAttribute('animation__shrink', 'property: scale; to: 0.001 0.001 0.001; dur: 260; easing: easeInBack');
+  setTimeout(() => { el.removeAttribute('animation__shrink'); done && done(); }, 280);
+}
+// Pregunta → respuesta A → respuesta B, una tras otra
+function staggerQuiz(){
+  ['qQuestion', 'qA', 'qB'].forEach((id, i) => pop($(id), i * 130));
+}
+// Sacudida horizontal (respuesta incorrecta)
+function shake(el){
+  const [x, y, z] = el.getAttribute('position') ? Object.values(el.getAttribute('position')) : [0, 0, 0];
+  el.setAttribute('animation__shake', `property: position; from: ${x - 0.025} ${y} ${z}; to: ${x + 0.025} ${y} ${z};
+                   dir: alternate; loop: 5; dur: 55; easing: easeInOutSine`);
+  setTimeout(() => { el.removeAttribute('animation__shake'); el.setAttribute('position', {x, y, z}); }, 360);
+}
+// Onda expansiva al detectar el retrato
+function detectBurst(){
+  const r = $('detectRing');
+  r.setAttribute('visible', true);
+  r.removeAttribute('animation__grow'); r.removeAttribute('animation__fade');
+  r.setAttribute('animation__grow', 'property: scale; from: 0.6 0.6 1; to: 1.5 1.5 1; dur: 700; easing: easeOutCubic');
+  r.setAttribute('animation__fade', 'property: components.material.material.opacity; from: 0.9; to: 0; dur: 700; easing: easeOutQuad');
 }
 
 // Confeti simple: pequeños planos de colores que salen disparados y se desvanecen
@@ -393,8 +490,11 @@ function confetti(){
 }
 
 function setStatus(text, found){
-  $('status').textContent = text;
-  $('status').classList.toggle('found', !!found);
+  const el = $('status');
+  if(el.textContent === text) return;
+  el.textContent = text;
+  el.classList.toggle('found', !!found);
+  el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');   // pequeño rebote
 }
 
 /* =====================================================================
@@ -411,8 +511,8 @@ function togglePlay(){
 }
 const fmt = s => isFinite(s) ? `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}` : '0:00';
 
-video.addEventListener('play',  () => { $('icoPlay').innerHTML = ICON_PAUSE; setIcon3D(false); });
-video.addEventListener('pause', () => { $('icoPlay').innerHTML = ICON_PLAY;  setIcon3D(true);  });
+video.addEventListener('play',  () => { $('icoPlay').innerHTML = ICON_PAUSE; setIcon3D(false); $('btnPlay').classList.remove('idle'); });
+video.addEventListener('pause', () => { $('icoPlay').innerHTML = ICON_PLAY;  setIcon3D(true);  $('btnPlay').classList.add('idle'); });
 video.addEventListener('ended', () => {
   wantPlaying = false;
   openQuiz();   // al terminar el video, la pregunta aparece sobre el retrato
@@ -477,7 +577,13 @@ function stopAR(){
   try{ sceneEl && sceneEl.systems['mindar-image-system'].stop(); }catch(e){}
   video.pause();
 }
-$('btnBack').addEventListener('click', stopAR);
+$('btnBack').addEventListener('click', e => {
+  stopAR();
+  if('startViewTransition' in document) return;   // transición nativa del navegador
+  e.preventDefault();
+  document.body.classList.add('leaving');
+  setTimeout(() => location.href = $('btnBack').href, 280);
+});
 $('btnQuiz').addEventListener('click', () => quizOpen ? closeQuiz() : openQuiz());
 window.addEventListener('pagehide', stopAR);
 </script>

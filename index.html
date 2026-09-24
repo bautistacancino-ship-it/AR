@@ -70,9 +70,72 @@
     .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:#222;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
     .toast.show{opacity:1;transform:translate(-50%,0)}
 
-    .screen{display:none;animation:fade .25s ease}
+    /* ===== ANIMACIONES Y TRANSICIONES ===== */
+    :root{--ease-out:cubic-bezier(.22,1,.36,1);--ease-back:cubic-bezier(.34,1.56,.64,1)}
+
+    /* Transición entre pantallas: desliza según la dirección (avanzar → / volver ←) */
+    .screen{display:none}
     .screen.active{display:block}
-    @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .screen.in-fwd {animation:inFwd  .45s var(--ease-out) both}
+    .screen.in-back{animation:inBack .45s var(--ease-out) both}
+    @keyframes inFwd {from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+    @keyframes inBack{from{opacity:0;transform:translateX(-40px)}to{opacity:1;transform:none}}
+
+    /* Entrada escalonada de los elementos marcados con .stagger (usa --i como índice) */
+    /* fill-mode "backwards": al terminar libera el transform, así el :hover sigue funcionando */
+    .screen.active .stagger{animation:rise .55s var(--ease-out) backwards;animation-delay:calc(var(--i,0) * 70ms + 80ms)}
+    .screen.active .cta.stagger{animation:rise .55s var(--ease-out) backwards .29s, pulse 2.4s ease-in-out 1s infinite}
+    @keyframes rise{from{opacity:0;transform:translateY(22px) scale(.97)}to{opacity:1;transform:none}}
+
+    /* Tarjetas de asignatura: elevación al pasar el cursor y el ícono "salta" */
+    .subject{transition:transform .25s var(--ease-back),box-shadow .25s}
+    .subject:hover{transform:translateY(-4px);box-shadow:0 12px 24px rgba(0,0,0,.12)}
+    .subject:hover .ico{animation:wiggle .5s ease}
+    @keyframes wiggle{0%,100%{transform:rotate(0)}30%{transform:rotate(-10deg) scale(1.1)}60%{transform:rotate(8deg)}}
+
+    /* Pestañas */
+    .tab{transition:background .25s,color .25s,transform .2s}
+    .tab:active{transform:scale(.95)}
+
+    /* Efecto ripple (onda) al tocar botones */
+    .ripple-host{position:relative;overflow:hidden}
+    .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:ripple .6s ease-out forwards;pointer-events:none}
+    @keyframes ripple{to{transform:scale(4);opacity:0}}
+
+    /* Ficha O'Higgins: zoom lento del retrato (efecto Ken Burns) */
+    .detail .img-wrap{overflow:hidden}
+    .screen.active .detail img{animation:kenburns 14s ease-in-out infinite alternate}
+    @keyframes kenburns{from{transform:scale(1)}to{transform:scale(1.08) translateY(-8px)}}
+
+    /* Botón AR: brillo que recorre el botón + pulso suave para llamar la atención */
+    .cta{position:relative;overflow:hidden;animation:pulse 2.4s ease-in-out infinite}
+    .cta::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
+      background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-20deg);animation:shine 3s ease-in-out infinite}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(118,82,245,.45)}50%{box-shadow:0 0 0 12px rgba(118,82,245,0)}}
+    @keyframes shine{0%,60%{left:-60%}100%{left:130%}}
+
+    /* Quiz */
+    .answer{transition:background .25s,color .25s,transform .2s var(--ease-back)}
+    .answer:active{transform:scale(.94)}
+    .answer.ok{animation:pop .5s var(--ease-back)}
+    .answer.bad{animation:shake .45s ease}
+    @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+    @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+    .feedback.show{animation:rise .4s var(--ease-out) both}
+    .confetti{position:fixed;top:-12px;width:9px;height:14px;border-radius:2px;pointer-events:none;z-index:50;animation:fall linear forwards}
+    @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+
+    /* Salida hacia la página AR */
+    body.leaving .app{animation:leave .3s ease forwards}
+    @keyframes leave{to{opacity:0;transform:scale(.96)}}
+
+    /* Transición nativa entre páginas (Chrome 126+, Safari 18.2+) */
+    @view-transition{navigation:auto}
+
+    /* Accesibilidad: si el usuario pidió reducir movimiento, se desactiva casi todo */
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+    }
   </style>
 </head>
 <body>
@@ -80,37 +143,37 @@
 
   <!-- ============ PANTALLA 1: Asignaturas ============ -->
   <section class="screen" id="asignaturas">
-    <div class="hello"><b>Bienvenido</b><span>Matias Solis Herra</span></div>
+    <div class="hello stagger" style="--i:0"><b>Bienvenido</b><span>Matias Solis Herra</span></div>
 
-    <nav class="tabs">
+    <nav class="tabs stagger" style="--i:1">
       <button class="tab" data-soon>Foro</button>
       <button class="tab" data-soon>Horario</button>
       <button class="tab active">Asignaturas</button>
     </nav>
 
     <div class="grid">
-      <button class="subject s-cultura" data-go="cultura">
+      <button class="subject s-cultura stagger" style="--i:2" data-go="cultura">
         <span class="ico"><!-- personas / manos -->
           <svg viewBox="0 0 24 24" fill="none" stroke="#7652F5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="2"/><circle cx="16" cy="6" r="2"/><circle cx="12" cy="9.5" r="1.8"/><path d="M4 13c0-2 1.8-3.5 4-3.5M20 13c0-2-1.8-3.5-4-3.5M9 15c0-1.6 1.3-2.8 3-2.8s3 1.2 3 2.8"/><path d="M2 12v5l4 4M22 12v5l-4 4"/></svg>
         </span>
         <h3>Cultura</h3>
         <p>Personajes, tradiciones y patrimonio de Chile.</p>
       </button>
-      <button class="subject s-historia" data-soon>
+      <button class="subject s-historia stagger" style="--i:3" data-soon>
         <span class="ico"><!-- pergamino -->
           <svg viewBox="0 0 24 24" fill="none" stroke="#FF665C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h10v13a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2z"/><path d="M5 5a2 2 0 1 0-2 2h2M8 9h5M8 12h5M8 15h3"/><path d="M21 3c-2 1-4 4-4.5 7l1 .5C20 9 21 6 21 3z"/></svg>
         </span>
         <h3>Historia</h3>
         <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed.</p>
       </button>
-      <button class="subject s-lenguaje" data-soon>
+      <button class="subject s-lenguaje stagger" style="--i:4" data-soon>
         <span class="ico"><!-- cabeza ABC -->
           <svg viewBox="0 0 24 24" fill="none" stroke="#FFC54A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21v-3.5A7.5 7.5 0 1 1 18 13l1.5 2.5H18V18a2 2 0 0 1-2 2h-2v1"/><rect x="7.5" y="6.5" width="8" height="5" rx="1"/><text x="11.5" y="10.4" font-size="3.6" text-anchor="middle" fill="#FFC54A" stroke="none" font-family="sans-serif" font-weight="700">ABC</text></svg>
         </span>
         <h3>Lenguaje</h3>
         <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed.</p>
       </button>
-      <button class="subject s-fisica" data-soon>
+      <button class="subject s-fisica stagger" style="--i:5" data-soon>
         <span class="ico"><!-- átomo -->
           <svg viewBox="0 0 24 24" fill="none" stroke="#56C368" stroke-width="1.5"><circle cx="12" cy="12" r="1.6" fill="#56C368"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/></svg>
         </span>
@@ -122,12 +185,12 @@
 
   <!-- ============ PANTALLA 2: Cultura / O'Higgins ============ -->
   <section class="screen" id="cultura">
-    <div class="hello"><b>Bienvenido</b><span>Matias Solis Herra</span></div>
-    <button class="link-back" data-go="asignaturas">‹ Asignaturas</button>
+    <div class="hello stagger" style="--i:0"><b>Bienvenido</b><span>Matias Solis Herra</span></div>
+    <button class="link-back stagger" style="--i:1" data-go="asignaturas">‹ Asignaturas</button>
 
-    <article class="detail">
+    <article class="detail stagger" style="--i:2">
       <header>Cultura</header>
-      <img src="assets/ohiggins.jpg" alt="Retrato de Bernardo O'Higgins" />
+      <div class="img-wrap"><img src="assets/ohiggins.jpg" alt="Retrato de Bernardo O'Higgins" /></div>
       <div class="body">
         <h2>Bernardo O’Higgins</h2>
         <p>Fue un militar y político chileno reconocido por ser libertador de Chile, así como por ser uno de los padres
@@ -136,20 +199,20 @@
     </article>
 
     <!-- Abre la experiencia AR (página aparte: la cámara ocupa toda la pantalla) -->
-    <a class="cta" href="ar.html">Experiencia realidad aumentada</a>
+    <a class="cta stagger" style="--i:3" href="ar.html" id="ctaAR">Experiencia realidad aumentada</a>
   </section>
 
   <!-- ============ PANTALLA 3: Pregunta ============ -->
   <section class="screen" id="quiz">
-    <button class="btn-back" data-go="cultura">Volver</button>
+    <button class="btn-back stagger" style="--i:0" data-go="cultura">Volver</button>
 
-    <div class="quiz-video">
+    <div class="quiz-video stagger" style="--i:1">
       <!-- playsinline: evita que iOS abra el video en pantalla completa -->
       <video src="assets/video-ohiggins.mp4" poster="assets/poster.jpg" controls playsinline preload="none"></video>
     </div>
 
-    <div class="question">¿Dónde nació Bernardo O’Higgins?</div>
-    <div class="answers">
+    <div class="question stagger" style="--i:2">¿Dónde nació Bernardo O’Higgins?</div>
+    <div class="answers stagger" style="--i:3">
       <button class="answer" data-answer="ok">Chillán</button>
       <button class="answer" data-answer="bad">Rancagua</button>
     </div>
@@ -162,12 +225,41 @@
 <script>
   /* ===== Router mínimo por hash: #asignaturas | #cultura | #quiz ===== */
   const screens = document.querySelectorAll('.screen');
+  const ORDER = ['asignaturas', 'cultura', 'quiz'];   // define la dirección de la animación
+  let current = null;
   function show(id){
     if(!document.getElementById(id)) id = 'asignaturas';
-    screens.forEach(s => s.classList.toggle('active', s.id === id));
+    const dir = current && ORDER.indexOf(id) < ORDER.indexOf(current) ? 'in-back' : 'in-fwd';
+    screens.forEach(s => {
+      s.classList.remove('active', 'in-fwd', 'in-back');
+      if(s.id === id){ void s.offsetWidth; s.classList.add('active', dir); }   // reflow → reinicia la animación
+    });
+    current = id;
     document.querySelectorAll('video').forEach(v => v.pause());
     window.scrollTo(0,0);
   }
+
+  /* Ripple en todos los botones */
+  document.addEventListener('pointerdown', e => {
+    const host = e.target.closest('button, .cta');
+    if(!host) return;
+    host.classList.add('ripple-host');
+    const r = host.getBoundingClientRect(), size = Math.max(r.width, r.height);
+    const dot = document.createElement('span');
+    dot.className = 'ripple';
+    dot.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size/2}px;top:${e.clientY - r.top - size/2}px`;
+    host.appendChild(dot);
+    setTimeout(() => dot.remove(), 650);
+  });
+
+  /* Salida animada al ir a la experiencia AR (si el navegador no tiene View Transitions) */
+  document.getElementById('ctaAR').addEventListener('click', e => {
+    if('startViewTransition' in document) return;   // la transición nativa se encarga
+    e.preventDefault();
+    document.body.classList.add('leaving');
+    setTimeout(() => location.href = 'ar.html', 280);
+  });
+  window.addEventListener('pageshow', () => document.body.classList.remove('leaving'));
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
   show(location.hash.slice(1));
 
@@ -182,12 +274,30 @@
   document.querySelectorAll('.answer').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.answer').forEach(b => b.classList.remove('ok','bad'));
     const ok = btn.dataset.answer === 'ok';
+    void btn.offsetWidth;                     // reinicia la animación si se toca de nuevo
     btn.classList.add(ok ? 'ok' : 'bad');
+    if(ok) confetti();
+    if(navigator.vibrate) navigator.vibrate(ok ? 80 : [60, 40, 60]);
+    fb.classList.remove('show'); void fb.offsetWidth;
     fb.innerHTML = ok
       ? '<b>¡Correcto!</b> Bernardo O’Higgins nació en Chillán el 20 de agosto de 1778.'
       : '<b>No es correcto.</b> En Rancagua dio una batalla famosa (1814), pero nació en <b>Chillán</b>.';
     fb.classList.add('show');
   }));
+
+  function confetti(){
+    const colors = ['#7652F5','#FF665C','#FFC54A','#56C368','#4FC3F7'];
+    for(let i = 0; i < 40; i++){
+      const c = document.createElement('i');
+      c.className = 'confetti';
+      c.style.left = Math.random() * 100 + 'vw';
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = 1.6 + Math.random() * 1.4 + 's';
+      c.style.animationDelay = Math.random() * .3 + 's';
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 3500);
+    }
+  }
 
   let t;
   function toast(msg){

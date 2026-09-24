@@ -36,13 +36,24 @@
     const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src;
   });
 
+  // En el celular (modo embed) se reduce la imagen a 600 px: compila ~3x más rápido y usa menos memoria
+  async function downscale(img, max){
+    if(Math.max(img.width, img.height) <= max) return img;
+    const k = max / Math.max(img.width, img.height), cv = document.createElement('canvas');
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    return loadImg(cv.toDataURL('image/jpeg', 0.9));
+  }
+
   async function compile(){
-    const img = await loadImg($('preview').src);
+    let img = await loadImg($('preview').src);
+    if(embed) img = await downscale(img, 600);
     const compiler = new window.MINDAR.IMAGE.Compiler();
     await compiler.compileImageTargets([img], p => {
       $('prog').value = p; $('msg').textContent = `Compilando… ${p.toFixed(0)}%`;
       post({type:'mind-progress', progress:p});
     });
+    post({type:'mind-progress', progress:100});
     const u8 = await compiler.exportData();
     return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
   }
